@@ -98,6 +98,9 @@
                   <span class="drag-dot">⠿</span>
                   <strong>{{cue.start}}</strong>
                   <small>至 {{cue.end}}</small>
+                  {{#if cue.hasActual}}
+                    <span class="actual-badge delta-{{cue.deltaClass}}">实 {{cue.actualTime}} · {{cue.deltaLabel}}</span>
+                  {{/if}}
                 </div>
                 <div class="cue-main">
                   <div class="cue-title-line">
@@ -162,6 +165,10 @@
             <span class="selected-kind">{{this.selectedCue.kind}}</span>
             <h3>{{this.selectedCue.title}}</h3>
             <dl>
+              <dt>计划开始</dt><dd>{{this.selectedCuePlannedStart}}（计划时间不因回传改动）</dd>
+              {{#if this.selectedCue.actual}}
+                <dt>实际执行</dt><dd>{{this.selectedCue.actual.time}}（来源：{{this.selectedCue.actual.source}}）</dd>
+              {{/if}}
               <dt>负责人</dt><dd>{{if this.selectedCue.owner this.selectedCue.owner "缺失"}}</dd>
               <dt>灯光</dt><dd>{{if this.selectedCue.lighting this.selectedCue.lighting "—"}}</dd>
               <dt>音响</dt><dd>{{if this.selectedCue.sound this.selectedCue.sound "—"}}</dd>
@@ -194,6 +201,82 @@
           {{else}}
             <div class="all-clear"><span>✓</span><p>未发现时间、负责人、撞场或失效引用问题。</p></div>
           {{/each}}
+        </div>
+      </section>
+
+      <section class="sync-panel paper-surface">
+        <div class="panel-heading">
+          <div><small>OFFLINE SYNC</small><h2>断网回传合并</h2></div>
+          <span class="issue-count">{{this.pendingRows.length}}</span>
+        </div>
+
+        <div class="sync-import">
+          <p class="sync-rule">按提示编号 + 场次归属对位；顺序与标题不作为身份依据。校验失败会保留原表，记录单可重试。</p>
+          <textarea
+            class="sync-textarea"
+            aria-label="现场执行记录 JSON"
+            placeholder="粘贴现场执行记录 JSON（packageId / records: cueId、sceneId、executedAt）"
+            rows="6"
+            {{on "input" this.onImportInput}}
+          >{{this.importText}}</textarea>
+          {{#each this.importErrors as |error|}}
+            <p class="sync-error">！{{error}}</p>
+          {{/each}}
+          <div class="sync-actions">
+            <PaperButton @raised={{true}} @primary={{true}} @onClick={{this.importExecutionPackage}}>校验并合并</PaperButton>
+            <PaperButton @onClick={{this.loadSamplePackage}}>填入示例记录</PaperButton>
+            <PaperButton @onClick={{this.loadConflictSample}}>冲突示例</PaperButton>
+          </div>
+          {{#if this.lastOutcomeSummary}}<p class="sync-summary">{{this.lastOutcomeSummary}}</p>{{/if}}
+        </div>
+
+        <div class="sync-section">
+          <h3>待核记录（{{this.pendingRows.length}}）</h3>
+          <div class="pending-list">
+            {{#each this.pendingRows as |item|}}
+              <div class="pending-item">
+                <div class="pending-head">
+                  <span class="pending-reason">{{item.reasonLabel}}</span>
+                  <small>{{item.source}}</small>
+                </div>
+                <p><strong>{{item.cueTitle}}</strong><small>编号 {{item.cueId}} · 归属 {{item.sceneName}}</small></p>
+                <p class="pending-times">
+                  {{#if item.localTime}}本机 {{item.localTime}} ↔ {{/if}}现场 {{item.incomingTime}}
+                </p>
+                <div class="pending-actions">
+                  {{#if item.canAttach}}
+                    {{#if item.localTime}}
+                      <PaperButton @raised={{true}} @primary={{true}} class="mini-action" @onClick={{fn this.acceptPendingActual item.id}}>用现场时间</PaperButton>
+                      <PaperButton class="mini-action" @onClick={{fn this.keepLocalPendingActual item.id}}>留本机时间</PaperButton>
+                    {{else}}
+                      <PaperButton @raised={{true}} @primary={{true}} class="mini-action" @onClick={{fn this.acceptPendingActual item.id}}>人工挂回</PaperButton>
+                    {{/if}}
+                  {{else}}
+                    <small class="pending-blocked">提示已不在原场次，不能挂到同名提示</small>
+                  {{/if}}
+                  <PaperButton @iconButton={{true}} @title="放弃该待核记录" @onClick={{fn this.discardPendingActual item.id}}>×</PaperButton>
+                </div>
+              </div>
+            {{else}}
+              <p class="empty-copy">没有待核记录。撤下或换场的提示记录会留在这里，而不是挂到同名提示。</p>
+            {{/each}}
+          </div>
+        </div>
+
+        <div class="sync-section">
+          <h3>计划与实际偏差（{{this.deviationRows.length}}）</h3>
+          <div class="deviation-list">
+            {{#each this.deviationRows as |dev|}}
+              <button type="button" class="deviation-item delta-{{dev.deltaClass}}" {{on "click" (fn this.selectDeviation dev.sceneId dev.cueId)}}>
+                <span class="deviation-name">{{dev.sceneName}} · {{dev.cueTitle}}</span>
+                <span class="deviation-times">{{dev.plannedStart}} → {{dev.actualStart}}</span>
+                <span class="deviation-delta">{{dev.deltaLabel}}</span>
+                <small class="deviation-source">{{dev.source}}</small>
+              </button>
+            {{else}}
+              <p class="empty-copy">合并成功后，这里会列出每条已对位提示的计划开始时间与现场实际执行时间。</p>
+            {{/each}}
+          </div>
         </div>
       </section>
 
