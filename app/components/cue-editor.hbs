@@ -98,6 +98,9 @@
                   <span class="drag-dot">⠿</span>
                   <strong>{{cue.start}}</strong>
                   <small>至 {{cue.end}}</small>
+                  {{#if cue.hasActual}}
+                    <span class="actual-chip" title={{cue.actualSource}}>实际 {{cue.actualTime}}</span>
+                  {{/if}}
                 </div>
                 <div class="cue-main">
                   <div class="cue-title-line">
@@ -162,6 +165,13 @@
             <span class="selected-kind">{{this.selectedCue.kind}}</span>
             <h3>{{this.selectedCue.title}}</h3>
             <dl>
+              <dt>计划时间</dt><dd>{{this.plannedTimeLabel}}</dd>
+              <dt>实际执行</dt>
+              <dd>
+                {{#if this.selectedCue.actualTime}}
+                  {{this.selectedCue.actualTime}}<small class="source-line">来源：{{this.selectedCue.actualSource}}</small>
+                {{else}}—{{/if}}
+              </dd>
               <dt>负责人</dt><dd>{{if this.selectedCue.owner this.selectedCue.owner "缺失"}}</dd>
               <dt>灯光</dt><dd>{{if this.selectedCue.lighting this.selectedCue.lighting "—"}}</dd>
               <dt>音响</dt><dd>{{if this.selectedCue.sound this.selectedCue.sound "—"}}</dd>
@@ -219,6 +229,85 @@
         {{else}}
           <p class="empty-copy">尚未锁定版本。锁定后可比较当前流程与历史快照。</p>
         {{/if}}
+      </section>
+
+      <section class="sync-panel paper-surface">
+        <div class="panel-heading">
+          <div><small>OFFLINE CUE CALLBACK</small><h2>断网回传合并</h2></div>
+          <span class={{if this.sync.pending.length "issue-count is-warn" "issue-count"}}>{{this.sync.pending.length}}</span>
+        </div>
+
+        <div class="sync-actions">
+          <input type="file" accept="application/json,.json" id="execution-package-input" class="file-input" {{on "change" this.onImportFile}} />
+          <label for="execution-package-input" class="md-button md-raised md-primary import-file-button">选择回传记录单（JSON）</label>
+          <PaperButton @onClick={{this.loadSamplePackage}}>载入断网示例包</PaperButton>
+          <PaperButton @warn={{true}} @onClick={{this.loadBrokenPackage}}>载入校验失败示例</PaperButton>
+        </div>
+        <p class="sync-rule">按提示编号与场次归属对位，顺序和标题不作身份依据；计划时间不会被回传改写。</p>
+        {{#if this.sync.lastImportAt}}<p class="sync-time">上次成功合并：{{this.sync.lastImportAt}}</p>{{/if}}
+
+        {{#if this.failedImport}}
+          <div class="sync-failed">
+            <h3>导入包校验失败 · {{this.failedImport.packageId}}</h3>
+            <ul>
+              {{#each this.failedImport.errors as |error|}}<li>{{error}}</li>{{/each}}
+            </ul>
+            <p class="sync-rule">原提示表已恢复，记录单保留在此处可直接修改后重试。</p>
+            <PaperInput @label="记录单内容（修正后重试）" @textarea={{true}} @passThru={{hash rows=6}} @value={{this.failedDraft}} @onChange={{this.updateFailedDraft}} />
+            <div class="sync-failed-actions">
+              <PaperButton @onClick={{this.dismissFailedImport}}>放弃该记录单</PaperButton>
+              <PaperButton @raised={{true}} @primary={{true}} @onClick={{this.retryFailedImport}}>重新校验并合并</PaperButton>
+            </div>
+          </div>
+        {{/if}}
+
+        <div class="pending-block">
+          <h3>待确认 / 待核（{{this.pendingRows.length}}）</h3>
+          {{#each this.pendingRows as |item|}}
+            <div class="pending-item kind-{{item.kind}}">
+              <span class="pending-kind">{{item.kindLabel}}</span>
+              <strong>{{item.record.cueTitle}}</strong>
+              <small>编号 {{item.record.cueId}} · 归属场次 {{item.record.sceneId}}</small>
+              <small>回传执行 {{item.record.executedAt}} · {{item.record.executedBy}}</small>
+              <small>来源：{{item.record.device}}</small>
+              {{#if item.record.note}}<small>现场备注：{{item.record.note}}</small>{{/if}}
+              <p class="pending-detail">{{item.detail}}</p>
+              <div class="pending-actions">
+                {{#if (eq item.kind "time-conflict")}}
+                  <PaperButton @onClick={{fn this.resolveTimeConflict item.rowIndex "local"}}>保留本机 {{item.localActualTime}}</PaperButton>
+                  <PaperButton @primary={{true}} @onClick={{fn this.resolveTimeConflict item.rowIndex "remote"}}>采用回传 {{item.record.executedAt}}</PaperButton>
+                {{else if (eq item.kind "cue-moved")}}
+                  <PaperButton @primary={{true}} @onClick={{fn this.relocatePendingRecord item.rowIndex}}>挂到当前场次（{{item.foundInSceneLabel}}）</PaperButton>
+                  <PaperButton @onClick={{fn this.archivePending item.rowIndex}}>核对留档</PaperButton>
+                {{else}}
+                  <PaperButton @onClick={{fn this.archivePending item.rowIndex}}>人工核对留档</PaperButton>
+                {{/if}}
+              </div>
+            </div>
+          {{else}}
+            <p class="empty-copy">暂无待确认记录。</p>
+          {{/each}}
+        </div>
+
+        <div class="deviation-block">
+          <h3>计划与实际偏差（{{this.deviationRows.length}}）</h3>
+          {{#each this.deviationRows as |row|}}
+            <div class="deviation-row {{if row.onTime "is-ontime" (if row.late "is-late" "is-early")}}">
+              <div>
+                <strong>{{row.cueTitle}}</strong>
+                <small>{{row.sceneId}}</small>
+              </div>
+              <div class="deviation-times">
+                <span>计划 {{row.plannedTime}}</span>
+                <span>实际 {{row.actualTime}}</span>
+              </div>
+              <span class="deviation-delta">{{row.deltaLabel}}</span>
+              <small class="source-line">来源：{{row.source}}</small>
+            </div>
+          {{else}}
+            <p class="empty-copy">合并成功后，此处列出已回传提示的计划与实际偏差。</p>
+          {{/each}}
+        </div>
       </section>
     </aside>
   </main>
